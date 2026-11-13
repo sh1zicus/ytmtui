@@ -2,6 +2,7 @@
 , rustPlatform
 , pkg-config
 , openssl
+, sqlite
 , makeWrapper
 , mpv
 , yt-dlp
@@ -24,8 +25,9 @@ rustPlatform.buildRustPackage {
   cargoLock.lockFile = ../Cargo.lock;
 
   nativeBuildInputs = [ pkg-config makeWrapper ];
-  # reqwest with default-tls (native-tls) links against OpenSSL.
-  buildInputs = [ openssl ];
+  # reqwest with default-tls (native-tls) links against OpenSSL; rusqlite
+  # links against SQLite when the bundled build is not selected by cargo.
+  buildInputs = [ openssl sqlite ];
 
   # Runtime dependencies are wrapped into PATH, so playback and downloads
   # work regardless of the user's profile.
