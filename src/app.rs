@@ -495,6 +495,9 @@ pub struct App {
     /// True while the add-to-playlist picker overlays the screen. The
     /// key loop routes navigation straight to the picker while it's up.
     pub picker_open: bool,
+    /// Track captured when the picker opened. Playback may advance while the
+    /// overlay is up, but `Enter` must add the song the user pressed `a` on.
+    picker_track: Option<Track>,
     /// The picker's own cursor into `self.playlists`.
     pub picker_index: usize,
     /// Browse section picker (opened with `b`): modal list of shelves to jump
@@ -852,6 +855,7 @@ impl App {
             add_cmd_tx,
             add_rx,
             picker_open: false,
+            picker_track: None,
             picker_index: 0,
             browse_picker_open: false,
             browse_picker_index: 0,
@@ -1529,10 +1533,10 @@ impl App {
             self.status_message = "Sign in first — run `ytmtui setup`.".into();
             return;
         }
-        if self.selected_track().is_none() {
+        let Some(track) = self.selected_track() else {
             self.status_message = "Highlight a song to add it to a playlist.".into();
             return;
-        }
+        };
         if self.playlists.is_empty() {
             self.status_message = if self.library_loaded {
                 "No editable playlists in your library.".into()
@@ -1542,6 +1546,7 @@ impl App {
             return;
         }
         self.picker_open = true;
+        self.picker_track = Some(track);
         self.picker_index = 0;
     }
 
@@ -1568,7 +1573,7 @@ impl App {
     /// `a` press started with, then fold up and let the footer report.
     pub fn picker_add_selected(&mut self) {
         self.picker_open = false;
-        let Some(track) = self.selected_track() else {
+        let Some(track) = self.picker_track.take() else {
             return;
         };
         let Some(playlist) = self.playlists.get(self.picker_index) else {
@@ -1585,6 +1590,7 @@ impl App {
 
     pub fn close_playlist_picker(&mut self) {
         self.picker_open = false;
+        self.picker_track = None;
     }
 
     /// Browse section labels in the order we want them to appear in the
@@ -3319,7 +3325,7 @@ impl App {
                     .next_queue_index()
                     .filter(|&index| self.queue[index].id == id)
             {
-                self.queue_index = index;
+                self.select_queue_index(index);
                 self.adopt_gapless_track(self.queue[index].clone());
                 self.mpv_entry_id = timeline.entry_id;
                 self.playback_position = position;
@@ -3746,9 +3752,63 @@ impl App {
     /// Move the queue cursor, repairing the shuffled order only if it does
     /// not know this index (e.g. after an external queue replacement).
     fn select_queue_index(&mut self, i: usize) {
+        let previous_id = self.current_track.as_ref().map(|track| track.id.clone());
+        let playing_id = self.queue.get(i).map(|track| track.id.clone());
         self.queue_index = i;
+        if let (Some(previous_id), Some(playing_id)) = (previous_id, playing_id) {
+            self.follow_playback_selection(&previous_id, &playing_id);
+        }
         if self.shuffle && !self.shuffle_order.contains(&i) {
             self.rebuild_shuffle_order(None);
+        }
+    }
+
+    /// Keep the highlighted row on the playing song when playback advances,
+    /// but only if the user had left the highlight on the previous song. A
+    /// highlight the user moved elsewhere is never yanked away.
+    fn follow_playback_selection(&mut self, previous_id: &str, playing_id: &str) {
+        let selected_is_previous = match self.current_page {
+            Page::Queue => self
+                .queue
+                .get(self.selected_index)
+                .is_some_and(|track| track.id == previous_id),
+            Page::Playlist => self
+                .playlist_tracks
+                .get(self.selected_index)
+                .is_some_and(|track| track.id == previous_id),
+            Page::Search => self
+                .search_results
+                .get(self.selected_index)
+                .and_then(|hit| hit.track())
+                .is_some_and(|track| track.id == previous_id),
+            Page::Browse => self.browse_rows.get(self.selected_index).is_some_and(|row| {
+                matches!(row, BrowseRow::Item(SearchHit::Track(track)) if track.id == previous_id)
+            }),
+            Page::Library => false,
+        };
+        if !selected_is_previous {
+            return;
+        }
+        let next_index = match self.current_page {
+            Page::Queue => self
+                .queue
+                .iter()
+                .position(|track| track.id == playing_id),
+            Page::Playlist => self
+                .playlist_tracks
+                .iter()
+                .position(|track| track.id == playing_id),
+            Page::Search => self
+                .search_results
+                .iter()
+                .position(|hit| hit.track().is_some_and(|track| track.id == playing_id)),
+            Page::Browse => self.browse_rows.iter().position(|row| {
+                matches!(row, BrowseRow::Item(SearchHit::Track(track)) if track.id == playing_id)
+            }),
+            Page::Library => None,
+        };
+        if let Some(index) = next_index {
+            self.selected_index = index;
         }
     }
 
@@ -4752,6 +4812,93 @@ mod regression_tests {
                 .contains("playlist-clear")
         );
         assert!(commands.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn gapless_advance_moves_the_queue_highlight_with_playback() {
+        let mut app = app();
+        let (player, _commands) = crate::player::player_tests::recording_player();
+        app.player = player;
+        app.current_page = Page::Queue;
+        app.selected_index = 0;
+        app.queue_index = 0;
+        app.mpv_entry_id = Some(1);
+        app.mpv_queued_next = true;
+        app.queued_next_id = Some("second".into());
+        app.pending_timeline = Some((
+            1,
+            app.player.current_generation(),
+            Some(Timeline {
+                position: Some(0.2),
+                duration: Some(180.0),
+                playlist_position: Some(1),
+                entry_id: Some(2),
+            }),
+        ));
+        app.poll_player_timeline();
+        assert_eq!(app.queue_index, 1);
+        assert_eq!(app.selected_index, 1);
+    }
+
+    #[tokio::test]
+    async fn playback_advance_does_not_yank_a_highlight_the_user_moved() {
+        let mut app = app();
+        let (player, _commands) = crate::player::player_tests::recording_player();
+        app.player = player;
+        app.current_page = Page::Queue;
+        app.selected_index = 2;
+        app.queue_index = 0;
+        app.mpv_entry_id = Some(1);
+        app.mpv_queued_next = true;
+        app.queued_next_id = Some("second".into());
+        app.pending_timeline = Some((
+            1,
+            app.player.current_generation(),
+            Some(Timeline {
+                position: Some(0.2),
+                duration: Some(180.0),
+                playlist_position: Some(1),
+                entry_id: Some(2),
+            }),
+        ));
+        app.poll_player_timeline();
+        assert_eq!(app.queue_index, 1);
+        assert_eq!(app.selected_index, 2);
+    }
+
+    #[tokio::test]
+    async fn playlist_highlight_follows_manual_skip() {
+        let mut app = app();
+        let (player, _commands) = crate::player::player_tests::recording_player();
+        app.player = player;
+        app.current_page = Page::Playlist;
+        app.playlist_tracks = app.queue.clone();
+        app.selected_index = 0;
+        app.play_next();
+        assert_eq!(app.queue_index, 1);
+        assert_eq!(app.selected_index, 1);
+        assert_eq!(app.current_track.as_ref().unwrap().id, "second");
+    }
+
+    #[tokio::test]
+    async fn add_picker_uses_the_track_captured_when_it_opened() {
+        let mut app = app();
+        app.current_page = Page::Queue;
+        app.selected_index = 2;
+        app.playlists = vec![Playlist {
+            id: "pl".into(),
+            title: "Playlist".into(),
+            subtitle: String::new(),
+            track_count: None,
+            kind: PlaylistKind::Playlist,
+        }];
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        app.add_cmd_tx = tx;
+        app.picker_open = true;
+        app.picker_track = Some(track("captured"));
+        app.picker_add_selected();
+        let command = rx.try_recv().unwrap();
+        assert_eq!(command.2, "captured");
     }
 
     #[tokio::test]
