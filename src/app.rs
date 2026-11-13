@@ -2814,7 +2814,18 @@ impl App {
         self.playlist_return_page = self.current_page;
         self.playlist_return_index = self.selected_index;
         self.current_page = Page::Playlist;
-        self.selected_index = 0;
+        // A resumed session can be playing a track from this collection
+        // before the collection was opened. Start on that row so `a` adds
+        // the song the user hears, not row zero.
+        self.selected_index = self
+            .current_track
+            .as_ref()
+            .and_then(|current| {
+                self.playlist_tracks
+                    .iter()
+                    .position(|track| track.id == current.id)
+            })
+            .unwrap_or(0);
     }
 
     pub fn play_selected(&mut self) {
@@ -4878,6 +4889,41 @@ mod regression_tests {
         assert_eq!(app.queue_index, 1);
         assert_eq!(app.selected_index, 1);
         assert_eq!(app.current_track.as_ref().unwrap().id, "second");
+    }
+
+    #[tokio::test]
+    async fn opening_a_playlist_selects_the_playing_track() {
+        let mut app = app();
+        app.current_track = Some(track("second"));
+        app.show_collection(
+            Playlist {
+                id: "pl".into(),
+                title: "Playlist".into(),
+                subtitle: String::new(),
+                track_count: None,
+                kind: PlaylistKind::Playlist,
+            },
+            vec![track("first"), track("second"), track("third")],
+        );
+        assert_eq!(app.current_page, Page::Playlist);
+        assert_eq!(app.selected_index, 1);
+    }
+
+    #[tokio::test]
+    async fn opening_an_unrelated_playlist_starts_at_the_top() {
+        let mut app = app();
+        app.current_track = Some(track("elsewhere"));
+        app.show_collection(
+            Playlist {
+                id: "pl".into(),
+                title: "Playlist".into(),
+                subtitle: String::new(),
+                track_count: None,
+                kind: PlaylistKind::Playlist,
+            },
+            vec![track("first"), track("second"), track("third")],
+        );
+        assert_eq!(app.selected_index, 0);
     }
 
     #[tokio::test]
