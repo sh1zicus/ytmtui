@@ -5436,6 +5436,7 @@ mod regression_tests {
                 title: "Playlist".into(),
                 subtitle: String::new(),
                 track_count: None,
+                thumbnail_url: None,
                 kind: PlaylistKind::Playlist,
             },
             vec![track("first"), track("second"), track("third")],
@@ -5454,6 +5455,7 @@ mod regression_tests {
                 title: "Playlist".into(),
                 subtitle: String::new(),
                 track_count: None,
+                thumbnail_url: None,
                 kind: PlaylistKind::Playlist,
             },
             vec![track("first"), track("second"), track("third")],
@@ -5471,6 +5473,7 @@ mod regression_tests {
             title: "Playlist".into(),
             subtitle: String::new(),
             track_count: None,
+            thumbnail_url: None,
             kind: PlaylistKind::Playlist,
         }];
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
