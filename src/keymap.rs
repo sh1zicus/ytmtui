@@ -50,6 +50,8 @@ pub enum Action {
     OpenBrowsePicker,
     FocusSearch,
     CycleSearchFilter(bool),
+    DiscoveryItem(bool),
+    PlayDiscoveryShelf,
     ScrollPage(i16),
     ToggleOffline,
 
@@ -342,6 +344,30 @@ const BINDINGS: &[Binding] = &[
     ),
     // -- Navigation ---------------------------------------------------------
     normal(
+        KeyCode::Char('P'),
+        Ctrl::No,
+        Action::PlayDiscoveryShelf,
+        Category::Navigation,
+        "play-shelf",
+        "Play songs in the selected Home or Explore shelf",
+    ),
+    normal(
+        KeyCode::Char('['),
+        Ctrl::No,
+        Action::DiscoveryItem(false),
+        Category::Navigation,
+        "discovery-item",
+        "Previous item in a Home or Explore shelf",
+    ),
+    normal(
+        KeyCode::Char(']'),
+        Ctrl::No,
+        Action::DiscoveryItem(true),
+        Category::Navigation,
+        "discovery-item",
+        "Next item in a Home or Explore shelf",
+    ),
+    normal(
         KeyCode::Up,
         Ctrl::Any,
         Action::PreviousRow,
@@ -435,7 +461,7 @@ const BINDINGS: &[Binding] = &[
         Action::CycleSearchFilter(true),
         Category::Navigation,
         "filter",
-        "Cycle Search filters (Search page only)",
+        "Cycle Search filters, or focus the sidebar",
     ),
     normal(
         KeyCode::BackTab,
@@ -443,7 +469,7 @@ const BINDINGS: &[Binding] = &[
         Action::CycleSearchFilter(false),
         Category::Navigation,
         "filter",
-        "Cycle Search filters (Search page only)",
+        "Cycle Search filters, or focus the sidebar",
     ),
     normal(
         KeyCode::PageUp,

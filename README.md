@@ -98,7 +98,7 @@ install -Dm755 ytmtui-*/ytmtui ~/.local/bin/ytmtui
 |--------|--------|
 | Default | Installs to `~/.local/bin` |
 | `sh install.sh --system` | Installs to `/usr/local/bin` |
-| `YTMTUI_VERSION=0.1.22` | Pins a specific version |
+| `YTMTUI_VERSION=0.1.23` | Pins a specific version |
 
 The script supports Linux x86_64, verifies the download checksum before installing, and automatically installs missing `mpv`, `yt-dlp`, and `ffmpeg` dependencies using a supported package manager. It verifies that all three dependencies run before reporting success.
 
@@ -261,7 +261,6 @@ Album art is rendered as **true high-resolution images** on terminals that suppo
 | **Kitty**    | ✅          | ✅ (≥ 0.40)              |
 | **WezTerm**  | ✅          | ✅                        |
 | **Ghostty**  | ✅          | ✅                        |
-| **Konsole**  | ✅          | ❌                        |
 
 **Kitty ≥ 0.40** is recommended for the full experience (images + 2× lyrics text in the maximized view).
 
@@ -374,6 +373,8 @@ screen, picker and text-entry mode. The everyday keys are:
 | Key | Action |
 | :--- | :--- |
 | `↑` / `↓` | Navigate lists |
+| `[` / `]` | Move to the previous / next item in the selected Home or Explore shelf |
+| `P` | Play songs from the selected Home or Explore shelf |
 | `Enter` | Play / open selection |
 | `Space` | Play / Pause |
 | `←` / `→` | Seek -10s / +10s |
@@ -463,6 +464,6 @@ ytmtui tracks <id>       # list tracks of a playlist / album / artist
 
 YTMTUI is licensed under the **MIT License**.
 
-Copyright (c) 2026 YTMTUI contributors
+Copyright (c) 2026 Quim Ashley M. Castillo
 
 See [LICENSE](LICENSE) for details.
